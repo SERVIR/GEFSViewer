@@ -10,7 +10,8 @@ import geoserver
 import requests
 import config as cfg
 import time
-
+import shutil
+import pwd,grp
 gzFilePattern = re.compile(r"\.tif\.gz$")
 patternWithoutgz = re.compile(r"(.*)\.gz$")
 firstftpdir = '/pub/org/chg/products/EWX/data/forecasts/CHIRPS-GEFS_precip/dekad_first/'
@@ -55,6 +56,9 @@ def getLatestForecast(ftp,ftpWD,gefsType,num):
     ftp.set_pasv(True)
     ftp.cwd(ftpWD)
     files = ftp.nlst()
+    outputDir = None
+    # uid = pwd.getpwnam('www-data').pw_uid
+    # gid = grp.getgrnam('www-data').gr_gid
 
     if 'first' in ftpWD:
         outputDir = os.path.join(appWorkspace.path,'gefs_'+str(gefsType)+'_first')
@@ -63,6 +67,8 @@ def getLatestForecast(ftp,ftpWD,gefsType,num):
 
     if not os.path.exists(outputDir):
         os.makedirs(outputDir)
+
+        # os.chown(outputDir, uid, gid)
 
     for the_file in os.listdir(outputDir):
         file_path = os.path.join(outputDir, the_file)
@@ -80,17 +86,26 @@ def getLatestForecast(ftp,ftpWD,gefsType,num):
                 fileToWriteTo = open(outputDir+"/" + fileToProcess, 'wb')
                 ftp.retrbinary('RETR ' + fileToProcess, fileToWriteTo.write)
                 fileToWriteTo.close()
+                # os.chown(os.path.join(outputDir,fileToWriteTo), uid, gid)
     ftp.close()
 
 
 #def get_latest_forecast():
 def cleanup():
+    #Delete any existing folders
+    existingDirs = os.path.join(appWorkspace.path,'')
+    for dir in os.listdir(existingDirs):
+        shutil.rmtree(os.path.join(existingDirs,dir), ignore_errors=True)
+
+    #Delete stores from geoserver
     cat = Catalog(cfg.geoserver['rest_url'], username=cfg.geoserver['user'], password=cfg.geoserver['password'])
     stores = cat.get_stores(workspace=cfg.geoserver['workspace'])
 
     for store in stores:
         cat.delete(store, recurse=True)
     cat.reload()
+
+
 
 def uploadForecast(gefsType,fType):
     inputDir = os.path.join(appWorkspace.path, 'gefs_' + str(gefsType)+'_'+str(fType))
@@ -118,11 +133,11 @@ def uploadForecast(gefsType,fType):
                          auth=(user, password))
 
 start_time = time.time()
+cleanup()
 getLatestForecast('chg-ftpout.geog.ucsb.edu',firstftpdir,'anom',6)
 getLatestForecast('chg-ftpout.geog.ucsb.edu',firstftpdir,'data',6)
 getLatestForecast('chg-ftpout.geog.ucsb.edu',lastftpdir,'anom',6)
 getLatestForecast('chg-ftpout.geog.ucsb.edu',lastftpdir,'data',6)
-cleanup()
 uploadForecast('data','first')
 uploadForecast('anom','first')
 uploadForecast('data','last')
